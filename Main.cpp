@@ -8,9 +8,10 @@ const char* vertexShaderSource = "#version 330 core\n"
 "layout (location = 0) in vec2 aPos;\n"
 "uniform vec2 uOffset;\n"
 "uniform vec2 uResolution;\n"
+"uniform float uRadius;\n"
 "void main()\n"
 "{\n"
-"	vec2 pixelPos = aPos + uOffset;\n"
+"	vec2 pixelPos = aPos * uRadius + uOffset;\n"
 "	vec2 ndc = (pixelPos / uResolution) * 2.0 - 1.0;\n"
 "	gl_Position = vec4(ndc, 0.0, 1.0);\n"
 "}\0";
@@ -79,10 +80,10 @@ int main() {
 		float centerY = 500.0f;
 		float circleRadius = 25.0f;
 
-		float velocityX = 10.0f * pPM;
-		float velocityY = 20.0f * pPM;
+		float velocityX = 5.0f * pPM;
+		float velocityY = 10.0f * pPM;
 		float accelerationX = 0.0f * pPM;
-		float accelerationY = -9.8f * pPM;
+		float accelerationY = 0.0f * pPM;
 
 		Circle() {
 			vertices.assign(totalVertices * 2, 0.0f);
@@ -92,26 +93,27 @@ int main() {
 			// add the x and y coordinate to the array
 			for (int i = 0; i <= numSegments; i++) {
 				float angle = (i * 2 * PI) / numSegments;
-				vertices[(i + 1) * 2] = (circleRadius * cos(angle));
-				vertices[(i + 1) * 2 + 1] = (circleRadius * sin(angle));
+				vertices[(i + 1) * 2] = cos(angle);
+				vertices[(i + 1) * 2 + 1] = sin(angle);
 			}
 		}
 	};
 	
-	/*	float distanceX;
-	 *	float distanceY;
-	 *	float unitDistanceX;
-	 *	float unitDistanceY;
-	 *	float circleXSquared;
-	 *	float circleYSquared;
-	 */
+	// create circle objects
+
+	float distanceX;
+	float distanceY;
+	float distanceTotal;
 
 	Circle circle;
 	Circle circle1;
 
-	circle1.velocityX = 30.0f * pPM;
-	circle1.velocityY = 15.0f * pPM;
-	circle1.accelerationX = 3.0f * pPM;
+	circle1.circleRadius = 75.0f;
+	circle1.centerY = 300.0f;
+	circle1.velocityX = 15.0f * pPM;
+	circle1.velocityY = 5.0f * pPM;
+	circle1.accelerationX = 0.0f * pPM;
+	circle1.accelerationY = 0.0f * pPM;
 		
 
 	GLuint VBO, VAO;
@@ -134,7 +136,7 @@ int main() {
 	// render loop
 	while (!glfwWindowShouldClose(window)) {
 
-
+		// get change in time between frames;
 		float currentFrame = static_cast<float>(glfwGetTime());
 		dT = currentFrame - lastFrame;
 		lastFrame = currentFrame;
@@ -142,7 +144,9 @@ int main() {
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 		
+		// draw circle
 		glUseProgram(shaderProgram);
+		glUniform1f(glGetUniformLocation(shaderProgram, "uRadius"), circle.circleRadius);
 		glUniform2f(glGetUniformLocation(shaderProgram, "uResolution"), screenWidth, screenHeight);
 		glUniform2f(glGetUniformLocation(shaderProgram, "uOffset"), circle.centerX, circle.centerY);
 
@@ -150,7 +154,9 @@ int main() {
 		glDrawArrays(GL_TRIANGLE_FAN, 0, circle.totalVertices);
 		glBindVertexArray(0);
 
+		// draw circle1
 		glUseProgram(shaderProgram);
+		glUniform1f(glGetUniformLocation(shaderProgram, "uRadius"), circle1.circleRadius);
 		glUniform2f(glGetUniformLocation(shaderProgram, "uResolution"), screenWidth, screenHeight);
 		glUniform2f(glGetUniformLocation(shaderProgram, "uOffset"), circle1.centerX, circle1.centerY);
 
@@ -196,7 +202,7 @@ int main() {
 		// collision in the y
 		if (circle1.centerY <= 0 + circle1.circleRadius) {
 			circle1.centerY = circle1.circleRadius;
-			circle1.velocityY *= -0.8;
+			circle1.velocityY *= -1;
 		}
 		if (circle1.centerY >= 600 - circle1.circleRadius) {
 			circle1.centerY = 600 - circle1.circleRadius;
@@ -213,27 +219,44 @@ int main() {
 			circle1.velocityX *= -1;
 		}
 		
-		// broken collision between circles
 
-		/* distanceX = abs(circle.centerX - circle1.centerX);
-		distanceY = abs(circle.centerY - circle1.centerY);
-		circleXSquared = pow(circle.centerX, 2) + pow(circle1.centerX, 2);
-		circleYSquared = pow(circle.centerY, 2) + pow(circle1.centerY, 2);
-		unitDistanceX = pow(circleXSquared, 0.5);
-		unitDistanceY = pow(circleYSquared, 0.5);
+		// collision between 2 circles
+		distanceX = circle.centerX - circle1.centerX;
+		distanceY = circle.centerY - circle1.centerY;
+		distanceTotal = sqrt(pow(distanceX, 2) + pow(distanceY, 2));
 
-		if (unitDistanceX < circle.circleRadius + circle1.circleRadius) {
-			circle.velocityX *= -1;
-			circle1.velocityX *= -1;
+		if (distanceTotal < circle.circleRadius + circle1.circleRadius) {
+			float normalX = distanceX / distanceTotal;
+			float normalY = distanceY / distanceTotal;
+			float overlap = (circle.circleRadius + circle1.circleRadius) - distanceTotal;
+
+			circle.centerX += normalX * overlap * 0.5f;
+			circle.centerY += normalY * overlap * 0.5f;
+			circle1.centerX -= normalX * overlap * 0.5f;
+			circle1.centerY -= normalY * overlap * 0.5f;
+
+			float velocityNormalA = circle.velocityX * normalX + circle.velocityY * normalY;
+			float velocityNormalB = circle1.velocityX * normalX + circle1.velocityY * normalY;
+
+			if (velocityNormalA < velocityNormalB) {
+				float change = velocityNormalB - velocityNormalA;
+
+				circle.velocityX += change * normalX;
+				circle.velocityY += change * normalY;
+				circle1.velocityX -= change * normalX;
+				circle1.velocityY -= change * normalY;
+			}
+		
 		}
-		if (unitDistanceY < circle.circleRadius + circle1.circleRadius) {
-			circle.velocityY *= -1;
-			circle1.velocityY *= -1;
-		} */
+
+
+
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 	} 
+
+
 
 
 	// terminate window
