@@ -3,6 +3,9 @@
 #include <glfw/glfw3.h>
 #include <cmath>
 #include <vector>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 // pixels per Meter conversion to have accurate physics equations
 constexpr double pPM = 1.0e-5;
@@ -11,15 +14,15 @@ constexpr double timeScale = 3.0e3;
 
 const char* vertexShaderSource = "#version 330 core\n"
 "layout (location = 0) in vec2 aPos;\n"
-"uniform vec2 uOffset;\n"
-"uniform vec2 uResolution;\n"
-"uniform float uRadius;\n"
+"uniform mat4 model;\n"
+"uniform mat4 view;\n"
+"uniform mat4 projection;\n"
 "void main()\n"
 "{\n"
-"	vec2 pixelPos = aPos * uRadius + uOffset;\n"
-"	vec2 ndc = (pixelPos / uResolution) * 2.0 - 1.0;\n"
-"	gl_Position = vec4(ndc, 0.0, 1.0);\n"
+"	gl_Position = projection * view * model * vec4(aPos, 0.0, 1.0);\n"
 "}\0";
+
+
 
 const char* fragmentShaderSource = "#version 330 core\n"
 "out vec4 FragColor;\n"
@@ -96,6 +99,8 @@ int main() {
 	glAttachShader(shaderProgram, fragmentShader);
 	glLinkProgram(shaderProgram);
 
+	GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
+
 	glDeleteShader(vertexShader);
 	glDeleteShader(fragmentShader);
 
@@ -149,7 +154,7 @@ int main() {
 	glBindVertexArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-	
+	glEnable(GL_DEPTH_TEST);
 
 	// render loop
 	while (!glfwWindowShouldClose(window)) {
@@ -166,16 +171,28 @@ int main() {
 		double scaledDT = dT * timeScale;
 
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		
 		// draw circle
 		glUseProgram(shaderProgram);
-		glUniform2f(glGetUniformLocation(shaderProgram, "uResolution"), screenWidth, screenHeight);
+
+		glm::mat4 view = glm::mat4(1.0f);
+		view = glm::translate(view, glm::vec3(0.0f, 0.0f, -725.0f));
+		view = glm::rotate(view, glm::radians(-40.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+		view = glm::translate(view, glm::vec3(-screenWidth / 2.0f, -screenHeight / 2.0f, 0.0f));
+		glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 2000.0f);
+
+		glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(view));
+		glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+
 		glBindVertexArray(VAO);
 
 		for (const Circle& body : bodies) {
-			glUniform1f(glGetUniformLocation(shaderProgram, "uRadius"), static_cast<float>(body.circleRadius));
-			glUniform2f(glGetUniformLocation(shaderProgram, "uOffset"), static_cast<float>(body.centerX), static_cast<float>(body.centerY));
+			glm::mat4 model = glm::mat4(1.0f);
+			model = glm::translate(model, glm::vec3(static_cast<float>(body.centerX), static_cast<float>(body.centerY), 0.0f));
+			model = glm::scale(model, glm::vec3(static_cast<float>(body.circleRadius)));
+
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 			glDrawArrays(GL_TRIANGLE_FAN, 0, body.totalVertices);
 		}
 		glBindVertexArray(0);
